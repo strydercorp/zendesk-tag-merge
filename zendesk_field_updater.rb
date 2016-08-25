@@ -1,28 +1,54 @@
+require 'zendesk_api'
+require 'yaml'
+require 'awesome_print'
+require "highline/import"
+
+config_options = YAML.load_file('config.yml')
+
 client = ZendeskAPI::Client.new do |config|
-  # Mandatory:
-  config.url = "<- your-zendesk-url ->" # e.g. https://mydesk.zendesk.com/api/v2
-
-  # Basic / Token Authentication
-  config.username = "login.email@zendesk.com"
-
-  # Choose one of the following depending on your authentication choice
-  config.token = "your zendesk token"
-  config.password = "your zendesk password"
-
-  # OAuth Authentication
-  config.access_token = "your OAuth access token"
-
-  # Optional:
-
-  # Retry uses middleware to notify the user
-  # when hitting the rate limit, sleep automatically,
-  # then retry the request.
-  config.retry = true
+  config.url = config_options["url"]
+  config.username = config_options["username"]
+  config.token = config_options["token"]
 end
 
+if ENV['custom_field_id']
+  custom_field_id = ENV['custom_field_id']
+else
+  puts "Please enter the custom field id: "
+  custom_field_id = gets
+end
 
-# This script will merge one tag into another, including updating all tickets with the old tag
-# to have the new tag.
+ticket_field = client.ticket_fields.find!(id: custom_field_id)
+# ap "Ticket Field Name: #{ticket_field.title}"
+# unless HighLine.agree "Is this the correct ticket field?"
+  # ap "Please enter the correct field id (you can also use an env variable custom_field_id)"
+  # exit
+# end
+
+old_value = "boston_university_school_of_public_health"
+new_value = "154"
+tickets = client.search(query: "fieldvalue:#{old_value}")
+
+tickets.all! do |ticket|
+  fields = ticket.custom_fields
+  field = fields.select { |field| field["id"] == custom_field_id.to_i }.first
+  unless field["value"] == old_value
+    ap "ticket previous value did not match expectations, skipping"
+    next
+  end
+  field["value"] = new_value
+
+  ticket.custom_fields = fields
+  if ticket.save
+    puts "Updated ticket #{ticket.id}"
+  else
+    # puts "Failed to save"
+    # puts ticket.errors
+  end
+end
+
+# This script will update all tickets custom field value from one thing to anther. This will help
+# us merge tags, or rename custom field tags
 # # Ask for old tag
 # # Ask for new tag
 # If either doesn't exist, suggest renaming
